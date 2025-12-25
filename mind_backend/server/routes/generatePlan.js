@@ -1,5 +1,5 @@
 import express from 'express';
-import { generatePlan } from '../services/aiService.js';
+import { generatePlan } from '../services/aiservices.js';
 import StudyPlan from '../models/studyPlan.js';
 
 

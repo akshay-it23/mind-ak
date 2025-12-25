@@ -1,25 +1,32 @@
-
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
+import { aiRateLimiter } from './services/aiservices.js';
 import dotenv from 'dotenv';
-
-
-
-
-
-
-const app= express();
-const port = process.env.PORT || 8000
-app.use(express.json());
-
-
-
-
+import curateResourcesRouter from './routes/curateResources.js';
+import generatePlanRouter from './routes/generatePlan.js';
+// PDF route removed: no pdfChat route file present
+import rateLimit from 'express-rate-limit';
+import { mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import path from 'path';
+// Load environment variables
 dotenv.config();
 
+// Ensure required directories exist
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!existsSync(uploadsDir)) {
+  await mkdir(uploadsDir, { recursive: true });
+  console.log('Created uploads directory');
+}
 
-//permisstion for froented ot conenect iwht abkcend
+const app = express();
+const port = process.env.PORT || 8000;
+
+// Trust proxy - required for rate limiting behind reverse proxies
+app.set('trust proxy', 1);
+app.use(express.json());
+
 // Middleware
 app.use(
   cors({
@@ -37,11 +44,6 @@ app.use(
 );
 
 
-// Apply routes directly without auth middleware
-app.use('/generate-plan', generatePlanRouter);
-app.use('/curate-resources', curateResourcesRouter);
-app.use('/pdf', pdfChatRouter);
-
 // Rate limiting configuration
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -49,87 +51,45 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests from this IP, please try again after 15 minutes',
-  // Add trusted proxy configuration
-  trustProxy: true
+  // removed invalid `trustProxy` option - configure trust proxy on the Express app instead
 });
+
+// Apply rate limiter to all routes
 app.use(limiter);
 
+// Apply rate limiter to AI-related routes
+app.use('/api/resources', aiRateLimiter);
+app.use('/api/study-plan', aiRateLimiter);
 
+// Basic health check
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Mind Mentor API is running' });
+});
 
+// Lightweight health check for Docker (no embeddings)
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'Mind Mentor API is running',
+    timestamp: new Date().toISOString()
+  });
+});
 
-const studyrouter=require('./routes/studyPlan')
-app.get('/',(req,res)=>{
-    res.send("task one comepleted")
-
-})
-
-
-
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
 // Apply routes directly without auth middleware
 app.use('/generate-plan', generatePlanRouter);
 app.use('/curate-resources', curateResourcesRouter);
-app.use('/pdf', pdfChatRouter);
 
-
-
-
-
-
-
-//basic heatlh check up
-app.get('/',(req,res)=>{
-    res.status(200).json({status:'ok',message:'mind mentor api is running'});
-
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
 });
-
-
-
-//light weight
-app.get('/health',(req,res)=>{
-    res.status(200).json({
-        status:'ok',
-        message:'mind mentor aoi is running',
-        timestamp: new Data().toISOSting()
-    });
-
-});
-
-
-
-
-
-
-
-
-//connect to mongogb
-mongoose.connect(process.env.MONGODB_URI)
-.then(()=>console.log('connected to mmognodb'))
-.catch((err)=>console.error('mongodb connection error'))
-
-
-
-
-
-
-
-
-//error handling middleware
-
-app.use((err, req, res) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
-});
-
-
-
-
-//port 
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server is running on port ${port}`);
 });
-
-
-// taks 34-39 smjh he na a rh ab to  mtlb kasie yaad tohsi to m
-// //tdadsk 34m
